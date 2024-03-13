@@ -1,26 +1,29 @@
-import tkinter as tk  # Importing tkinter library as tk for GUI
-from tkinter import ttk  # Importing ttk module from tkinter for themed widgets
-from tkinter import scrolledtext  # Importing scrolledtext module from tkinter for scrolling text widget
-from tkinter import messagebox  # Importing messagebox module from tkinter for displaying message boxes
-import re  # Importing re module for regular expressions
-import csv  # Importing csv module for reading and writing CSV files
-import nltk  # Importing Natural Language Toolkit (nltk)
-from nltk.tokenize import word_tokenize  # Importing word_tokenize function for tokenization
-from nltk.corpus import stopwords  # Importing stopwords module from nltk.corpus
-from nltk.stem import PorterStemmer  # Importing PorterStemmer from nltk.stem for stemming
+import tkinter as tk
+from tkinter import ttk
+from tkinter import scrolledtext
+from tkinter import messagebox
+import re
+import csv
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.cluster import KMeans
+import numpy as np
 
-nltk.download('punkt')  # Downloading necessary nltk resources
+nltk.download('punkt')
 nltk.download('stopwords')
 
 # Function to preprocess text
 def preprocess_text(text):
-    text = text.lower()  # Convert text to lowercase
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)  # Remove non-alphanumeric characters and punctuation
-    tokens = word_tokenize(text)  # Tokenize the text
-    stop_words = set(stopwords.words('english'))  # Get English stopwords
-    tokens = [token for token in tokens if token not in stop_words]  # Remove stopwords
-    stemmer = PorterStemmer()  # Initialize Porter Stemmer
-    tokens = [stemmer.stem(token) for token in tokens]  # Perform stemming
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    tokens = word_tokenize(text)
+    stop_words = set(stopwords.words('english'))
+    tokens = [token for token in tokens if token not in stop_words]
+    stemmer = PorterStemmer()
+    tokens = [stemmer.stem(token) for token in tokens]
     return tokens
 
 # Function to read dataset from CSV file
@@ -81,6 +84,43 @@ def display_books(relevant_books, num_display, keyword_tokens):
     else:
         messagebox.showinfo("No Results", "No relevant books found.")
 
+# Function to display clusters with most repeated tokens without stop words
+def display_clusters(dataset):
+    vectorizer = CountVectorizer(stop_words='english')  # Exclude English stop words
+    X = vectorizer.fit_transform(dataset)
+    
+    # Apply k-means clustering
+    kmeans = KMeans(n_clusters=5)
+    kmeans.fit(X)
+    cluster_centers = kmeans.cluster_centers_
+    cluster_labels = kmeans.labels_
+    
+    # Find most repeated tokens in each cluster
+    feature_names = vectorizer.get_feature_names_out()
+    top_tokens_per_cluster = {}
+    for cluster_idx, center in enumerate(cluster_centers):
+        top_indices = np.argsort(center)[::-1][:5]  # Get indices of top 5 tokens
+        top_tokens_per_cluster[cluster_idx] = [feature_names[i] for i in top_indices]
+    
+    # Display clusters and their most repeated tokens
+    result_text.insert(tk.END, "\n\nTop 5 Clusters with Most Repeated Tokens (Excluding Stop Words):\n\n")
+    for cluster_idx, top_tokens in top_tokens_per_cluster.items():
+        result_text.insert(tk.END, f"Cluster {cluster_idx + 1}:\n")
+        result_text.insert(tk.END, ", ".join(top_tokens) + "\n\n")
+        
+    # Open a new window to display dataset elements corresponding with the cluster tokens
+    new_window = tk.Toplevel(root)
+    new_window.title("Dataset Elements for Clusters")
+    new_window.geometry("600x400")
+    for cluster_idx, top_tokens in top_tokens_per_cluster.items():
+        cluster_label = ttk.Label(new_window, text=f"Cluster {cluster_idx + 1} Tokens: {' '.join(top_tokens)}")
+        cluster_label.pack()
+        for idx, book_info in enumerate(dataset):
+            if any(token in preprocess_text(book_info) for token in top_tokens):
+                book_info_label = ttk.Label(new_window, text=f"Book {idx + 1}: {book_info}")
+                book_info_label.pack()
+
+
 # Function triggered by the search button
 def search():
     keyword = keyword_entry.get()
@@ -88,6 +128,30 @@ def search():
     keyword_tokens = preprocess_text(keyword)
     relevant_books = search_books_by_keyword(keyword, sample_dataset, category_patterns)
     display_books(relevant_books, num_display, keyword_tokens)
+
+# GUI setup
+root = tk.Tk()
+root.title("Book Search")
+root.geometry("600x400")
+
+keyword_label = ttk.Label(root, text="Enter keyword:")
+keyword_label.pack()
+keyword_entry = ttk.Entry(root, width=50)
+keyword_entry.pack()
+
+display_label = ttk.Label(root, text="Enter number of books to display:")
+display_label.pack()
+display_entry = ttk.Entry(root, width=10)
+display_entry.pack()
+
+search_button = ttk.Button(root, text="Search", command=search)
+search_button.pack()
+
+cluster_button = ttk.Button(root, text="Display Clusters", command=lambda: display_clusters([book[0] for book in sample_dataset]))
+cluster_button.pack()
+
+result_text = scrolledtext.ScrolledText(root, width=60, height=20, wrap=tk.WORD)
+result_text.pack()
 
 # Define category patterns for extracting information from book data
 category_patterns = {
@@ -101,7 +165,7 @@ category_patterns = {
 
 # Example usage:
 file_path = 'goodreads_data1.csv'
-num_samples = 500  # Number of samples to take from the dataset
+num_samples = 500
 
 # Read the entire dataset
 full_dataset = read_dataset(file_path)
@@ -109,25 +173,4 @@ full_dataset = read_dataset(file_path)
 # Take a subset of the dataset for testing
 sample_dataset = full_dataset[:num_samples]
 
-# GUI setup
-root = tk.Tk()  # Creating tkinter window
-root.title("Book Search")  # Setting title of the window
-root.geometry("600x400")  # Setting dimensions of the window
-
-keyword_label = ttk.Label(root, text="Enter keyword:")  # Label for keyword entry
-keyword_label.pack()
-keyword_entry = ttk.Entry(root, width=50)  # Text entry for keyword
-keyword_entry.pack()
-
-display_label = ttk.Label(root, text="Enter number of books to display:")  # Label for number of books entry
-display_label.pack()
-display_entry = ttk.Entry(root, width=10)  # Text entry for number of books
-display_entry.pack()
-
-search_button = ttk.Button(root, text="Search", command=search)  # Button to trigger search function
-search_button.pack()
-
-result_text = scrolledtext.ScrolledText(root, width=60, height=20, wrap=tk.WORD)  # Scrolled text widget for displaying results
-result_text.pack()
-
-root.mainloop()  # Running the tkinter event loop
+root.mainloop()
